@@ -1,9 +1,7 @@
 from flask import Flask, render_template_string, request, jsonify
-import requests, urllib.parse
+import requests, json
 
 app = Flask(__name__)
-
-GROQ_API_KEY = "gsk_QPGwqeNplwSTIILPU3R8WGdyb3FYjAzqg5RpQQEnrm9PoKSUddP"
 
 HTML = """
 <!DOCTYPE html>
@@ -38,7 +36,7 @@ label{display:block;margin-bottom:.4rem;color:#94a3b8;font-size:.875rem}
 .footer{text-align:center;padding:2rem;color:#475569;font-size:.8rem}
 .chat-history{max-height:400px;overflow-y:auto;margin-bottom:1rem}
 .msg{padding:.75rem 1rem;border-radius:.75rem;margin-bottom:.5rem;line-height:1.7}
-.msg.user{background:rgba(124,58,237,0.2);border:1px solid rgba(124,58,237,0.3);text-align:right}
+.msg.user{background:rgba(124,58,237,0.2);border:1px solid rgba(124,58,237,0.3)}
 .msg.ai{background:rgba(0,0,0,0.3);border:1px solid rgba(167,139,250,0.2);white-space:pre-wrap}
 .msg .label{font-size:.7rem;color:#64748b;margin-bottom:.3rem}
 </style>
@@ -46,7 +44,7 @@ label{display:block;margin-bottom:.4rem;color:#94a3b8;font-size:.875rem}
 <body>
 <div class="header">
 <h1>🌟 SuperAI</h1>
-<p>AI Chat · Deep Research · Image Generation · Audio · 100% Free 🇮🇳</p>
+<p>AI Chat · Deep Research · Image · Audio · Free 24/7 🇮🇳</p>
 </div>
 <div class="tabs">
 <div class="tab active" onclick="showTab('chat')">💬 Chat</div>
@@ -102,7 +100,7 @@ label{display:block;margin-bottom:.4rem;color:#94a3b8;font-size:.875rem}
 </div>
 </div>
 
-<div class="footer">SuperAI · Powered by Groq AI · Free 24/7 anywhere in India 🇮🇳</div>
+<div class="footer">SuperAI · Free AI · Works 24/7 anywhere in India 🇮🇳</div>
 
 <script>
 function showTab(name){
@@ -119,7 +117,18 @@ function showResult(id,html){
   el.style.display='block';
 }
 
-let chatMessages=[{role:'system',content:'You are a helpful AI assistant. Give clear, detailed, accurate answers to every question. Answer in the same language the user asks in.'}];
+async function callAI(systemPrompt, userPrompt){
+  const r = await fetch('/api/chat',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({system: systemPrompt, prompt: userPrompt})
+  });
+  const d = await r.json();
+  if(d.error) throw new Error(d.error);
+  return d.result;
+}
+
+let chatHistory=[];
 
 async function doChat(){
   const input=document.getElementById('chat-input');
@@ -128,24 +137,20 @@ async function doChat(){
   input.value='';
   const history=document.getElementById('chat-history');
   history.innerHTML+=`<div class="msg user"><div class="label">You</div>${prompt}</div>`;
-  history.innerHTML+=`<div class="msg ai" id="latest-ai"><div class="label">SuperAI</div><div class="loader">Thinking...</div></div>`;
+  const aiId='ai-'+Date.now();
+  history.innerHTML+=`<div class="msg ai" id="${aiId}"><div class="label">SuperAI</div><div class="loader">Thinking...</div></div>`;
   history.scrollTop=history.scrollHeight;
   setStatus('chat','⏳ AI is thinking...');
-  chatMessages.push({role:'user',content:prompt});
   try{
-    const r=await fetch('/api/chat',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({messages:chatMessages})
-    });
-    const d=await r.json();
-    if(d.error){throw new Error(d.error);}
-    chatMessages.push({role:'assistant',content:d.result});
-    document.getElementById('latest-ai').innerHTML=`<div class="label">SuperAI ✅</div>${d.result}`;
+    const result = await callAI(
+      'You are a helpful AI assistant. Give clear detailed accurate answers. Answer in the same language the user uses.',
+      prompt
+    );
+    document.getElementById(aiId).innerHTML=`<div class="label">SuperAI ✅</div>${result}`;
     history.scrollTop=history.scrollHeight;
-    setStatus('chat','✅ Answer ready - ask another question!');
+    setStatus('chat','✅ Done - ask another question!');
   }catch(e){
-    document.getElementById('latest-ai').innerHTML=`<div class="label">SuperAI ❌</div>Error: ${e.message}`;
+    document.getElementById(aiId).innerHTML=`<div class="label">SuperAI ❌</div>Error: ${e.message}. Please try again.`;
     setStatus('chat','❌ Failed - please try again');
   }
 }
@@ -159,21 +164,15 @@ document.addEventListener('DOMContentLoaded',function(){
 async function doResearch(){
   const prompt=document.getElementById('research-input').value.trim();
   if(!prompt){alert('Please type a topic.');return;}
-  setStatus('research','🔍 Deeply researching... please wait 15-30 seconds');
+  setStatus('research','🔍 Deeply researching... please wait');
   showResult('research','<div class="loader">Deep researching your topic...</div>');
   try{
-    const r=await fetch('/api/chat',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({messages:[
-        {role:'system',content:'You are a deep research expert. Give very detailed, comprehensive, well-structured answers with headings, facts, examples and explanations. Cover the topic completely.'},
-        {role:'user',content:'Do a thorough deep research on: '+prompt}
-      ]})
-    });
-    const d=await r.json();
-    if(d.error){throw new Error(d.error);}
+    const result = await callAI(
+      'You are a deep research expert. Give very detailed comprehensive well-structured answers with headings facts examples and explanations. Cover the topic completely.',
+      'Do a thorough deep research on: '+prompt
+    );
     setStatus('research','✅ Research complete');
-    showResult('research',d.result);
+    showResult('research',result);
   }catch(e){
     setStatus('research','❌ Failed');
     showResult('research','Error: '+e.message+'. Please try again.');
@@ -202,7 +201,7 @@ function doImage(){
     };
     img2.onerror=function(){
       setStatus('image','❌ Failed - try simpler description');
-      showResult('image','Image failed. Try again with simpler words.');
+      showResult('image','Image failed. Try again in 30 seconds.');
     };
     img2.src=url2;
   };
@@ -230,29 +229,74 @@ def index():
 @app.route('/api/chat', methods=['POST'])
 def api_chat():
     data = request.json
-    messages = data.get('messages', [])
+    system_prompt = data.get('system', 'You are a helpful AI assistant.')
+    user_prompt = data.get('prompt', '')
+    
+    # Try multiple free AI providers one by one
+    
+    # Provider 1: Groq
     try:
         r = requests.post(
             'https://api.groq.com/openai/v1/chat/completions',
             headers={
-                'Authorization': f'Bearer {GROQ_API_KEY}',
+                'Authorization': 'Bearer gsk_QPGwqeNplwSTIILPU3R8WGdyb3FYjAzqg5RpQQEnrm9PoKSUddP',
                 'Content-Type': 'application/json'
             },
             json={
-                'model': 'llama3-70b-8192',
-                'messages': messages,
-                'temperature': 0.7,
+                'model': 'llama3-8b-8192',
+                'messages': [
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': user_prompt}
+                ],
                 'max_tokens': 2048
             },
-            timeout=60
+            timeout=30
         )
         d = r.json()
         if 'choices' in d:
             return jsonify({'result': d['choices'][0]['message']['content']})
-        else:
-            return jsonify({'error': str(d)})
-    except Exception as e:
-        return jsonify({'error': str(e)})
+    except:
+        pass
+
+    # Provider 2: OpenRouter free
+    try:
+        r = requests.post(
+            'https://openrouter.ai/api/v1/chat/completions',
+            headers={
+                'Content-Type': 'application/json',
+                'HTTP-Referer': 'https://superai-app.onrender.com',
+                'X-Title': 'SuperAI'
+            },
+            json={
+                'model': 'meta-llama/llama-3.1-8b-instruct:free',
+                'messages': [
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': user_prompt}
+                ],
+                'max_tokens': 2048
+            },
+            timeout=30
+        )
+        d = r.json()
+        if 'choices' in d:
+            return jsonify({'result': d['choices'][0]['message']['content']})
+    except:
+        pass
+
+    # Provider 3: Pollinations text
+    try:
+        import urllib.parse
+        encoded = urllib.parse.quote(user_prompt)
+        r = requests.get(
+            f'https://text.pollinations.ai/{encoded}?model=openai',
+            timeout=30
+        )
+        if r.status_code == 200 and len(r.text) > 10:
+            return jsonify({'result': r.text})
+    except:
+        pass
+
+    return jsonify({'error': 'All AI providers failed. Please try again in 30 seconds.'})
 
 @app.route('/health')
 def health():
